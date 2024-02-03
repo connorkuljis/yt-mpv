@@ -20,31 +20,6 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-// This variable indicates whether the script should launch a web server to
-// initiate the authorization flow or just display the URL in the terminal
-// window. Note the following instructions based on this setting:
-// * launchWebServer = true
-//  1. Use OAuth2 credentials for a web application
-//  2. Define authorized redirect URIs for the credential in the Google APIs
-//     Console and set the RedirectURL property on the config object to one
-//     of those redirect URIs. For example:
-//     config.RedirectURL = "http://localhost:8090"
-//  3. In the startWebServer function below, update the URL in this line
-//     to match the redirect URI you selected:
-//     listener, err := net.Listen("tcp", "localhost:8090")
-//     The redirect URI identifies the URI to which the user is sent after
-//     completing the authorization flow. The listener then captures the
-//     authorization code in the URL and passes it back to this script.
-//
-// * launchWebServer = false
-//  1. Use OAuth2 credentials for an installed application. (When choosing
-//     the application type for the OAuth2 client ID, select "Other".)
-//  2. Set the redirect URI to "urn:ietf:wg:oauth:2.0:oob", like this:
-//     config.RedirectURL = "urn:ietf:wg:oauth:2.0:oob"
-//  3. When running the script, complete the auth flow. Then copy the
-//     authorization code from the browser and enter it on the command line.
-const launchWebServer = false
-
 const missingClientSecretsMessage = `
 Please configure OAuth 2.0
 To make this sample run, you need to populate the client_secrets.json file
@@ -67,18 +42,34 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// now := time.Now().Format(time.RFC3339)
+
 	// List subscriptions
-	subs, err := youtubeService.Subscriptions.List([]string{"snippet"}).Mine(true).Do()
+	playlists, err := youtubeService.Playlists.List([]string{"snippet", "contentDetails"}).Mine(true).Do()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Print subscription details
-	for _, sub := range subs.Items {
-		log.Printf("Subscription ID: %s\n", sub.Id)
-		log.Printf("Channel Title: %s\n", sub.Snippet.Title)
-		log.Printf("Channel ID: %s\n", sub.Snippet.ResourceId.ChannelId)
-		log.Println("--------------")
+	for _, item := range playlists.Items {
+		fmt.Println("Id: ", item.Id)
+		fmt.Println("Playlist details: ", item.ContentDetails)
+		fmt.Println("--------------------------------------------------")
+	}
+
+	target := playlists.Items[0].Id
+	execMpv(target)
+}
+
+func execMpv(id string) {
+	url := "https://www.youtube.com/playlist?list=" + id
+	log.Print(url)
+
+	cmd := exec.Command("mpv", url)
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -99,9 +90,6 @@ func getClient(scope string) *http.Client {
 		log.Fatalf("Unable to parse client secret file to config: %v", err)
 	}
 
-	// Use a redirect URI like this for a web app. The redirect URI must be a
-	// valid one for your OAuth2 credentials.
-	// config.RedirectURL = "http://localhost:8090"
 	// Use the following redirect URI if launchWebServer=false in oauth2.go
 	config.RedirectURL = "urn:ietf:wg:oauth:2.0:oob"
 
@@ -109,16 +97,12 @@ func getClient(scope string) *http.Client {
 	if err != nil {
 		log.Fatalf("Unable to get path to cached credential file. %v", err)
 	}
+
 	tok, err := tokenFromFile(cacheFile)
 	if err != nil {
 		authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-		if launchWebServer {
-			fmt.Println("Trying to get token from web")
-			tok, err = getTokenFromWeb(config, authURL)
-		} else {
-			fmt.Println("Trying to get token from prompt")
-			tok, err = getTokenFromPrompt(config, authURL)
-		}
+		fmt.Println("Trying to get token from prompt")
+		tok, err = getTokenFromPrompt(config, authURL)
 		if err == nil {
 			saveToken(cacheFile, tok)
 		}
@@ -186,29 +170,6 @@ func getTokenFromPrompt(config *oauth2.Config, authURL string) (*oauth2.Token, e
 		log.Fatalf("Unable to read authorization code %v", err)
 	}
 	fmt.Println(authURL)
-	return exchangeToken(config, code)
-}
-
-// getTokenFromWeb uses Config to request a Token.
-// It returns the retrieved Token.
-func getTokenFromWeb(config *oauth2.Config, authURL string) (*oauth2.Token, error) {
-	codeCh, err := startWebServer()
-	if err != nil {
-		fmt.Printf("Unable to start a web server.")
-		return nil, err
-	}
-
-	err = openURL(authURL)
-	if err != nil {
-		log.Fatalf("Unable to open authorization URL in web server: %v", err)
-	} else {
-		fmt.Println("Your browser has been opened to an authorization URL.",
-			" This program will resume once authorization has been provided.")
-		fmt.Println(authURL)
-	}
-
-	// Wait for the web server to get the code.
-	code := <-codeCh
 	return exchangeToken(config, code)
 }
 
