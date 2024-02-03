@@ -42,8 +42,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// now := time.Now().Format(time.RFC3339)
+	getSubscriptions(youtubeService)
+}
 
+func getSubscriptions(youtubeService *youtube.Service) *youtube.SubscriptionListResponse {
+	subs, err := youtubeService.Subscriptions.List([]string{"snippet", "contentDetails", "id"}).Mine(true).Do()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, item := range subs.Items {
+		fmt.Println("id: ", item.Id)
+		fmt.Println("channel id: ", item.Snippet.ChannelId)
+		fmt.Println("channel title: ", item.Snippet.Title)
+		fmt.Println("--------------------------------------------------")
+	}
+
+	return subs
+}
+
+func getPlaylists(youtubeService *youtube.Service) *youtube.PlaylistListResponse {
 	// List subscriptions
 	playlists, err := youtubeService.Playlists.List([]string{"snippet", "contentDetails"}).Mine(true).Do()
 	if err != nil {
@@ -57,8 +75,7 @@ func main() {
 		fmt.Println("--------------------------------------------------")
 	}
 
-	target := playlists.Items[0].Id
-	execMpv(target)
+	return playlists
 }
 
 func execMpv(id string) {
